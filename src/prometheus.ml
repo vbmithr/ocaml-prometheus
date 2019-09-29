@@ -39,7 +39,7 @@ let pp_labels ppf labels =
   end
 
 let pp_sum_count name ppf { count; sum; _ } =
-  Fmt.pf ppf "%s_sum %a" name pp_float sum ;
+  Fmt.pf ppf "%s_sum %a@." name pp_float sum ;
   Fmt.pf ppf "%s_count %d" name count
 
 let pp_histogram_line name labels ppf (le, v) =
@@ -53,11 +53,13 @@ let pp_summary_line name labels ppf (le, v) =
 let pp_complex_histogram name labels ppf ({ data; _ } as cplx) =
   Fmt.list ~sep:Format.pp_print_newline
     (pp_histogram_line name labels) ppf (FMap.bindings data) ;
+  Format.pp_print_newline ppf () ;
   pp_sum_count name ppf cplx
 
 let pp_complex_summary name labels ppf ({ data; _ } as cplx) =
   Fmt.list ~sep:Format.pp_print_newline
     (pp_summary_line name labels) ppf (FMap.bindings data) ;
+  Format.pp_print_newline ppf () ;
   pp_sum_count name ppf cplx
 
 type _ typ =
@@ -86,8 +88,8 @@ let pp_ts ppf ts =
 
 let pp_hdr : type a. a t Fmt.t =
   fun ppf { name; help; typ; _ } ->
-  Option.iter (fun msg -> Fmt.pf ppf "HELP %s %s@." name msg) help ;
-  Fmt.pf ppf "TYPE %s %a@." name pp_typ typ
+  Option.iter (fun msg -> Fmt.pf ppf "# HELP %s %s@." name msg) help ;
+  Fmt.pf ppf "# TYPE %s %a@." name pp_typ typ
 
 let pp_simple ppf { name; labels; ts; v; _ } =
   Fmt.pf ppf "%s%a %f %a" name pp_labels labels v (Fmt.option pp_ts) ts
@@ -105,6 +107,9 @@ let pp : type a. a t Fmt.t = fun ppf t ->
   | Gauge -> pp_simple ppf t
   | Histogram -> pp_histogram ppf t
   | Summary -> pp_summary ppf t
+
+let pp_list ts =
+  Fmt.list ~sep:Format.pp_print_newline pp ts
 
 let counter ?help ?(labels=[]) ?ts name v = {
   name; help; labels = SMap.of_bindings labels;

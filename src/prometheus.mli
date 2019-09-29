@@ -20,6 +20,7 @@ type 'a t = private {
 and _ typ
 
 val pp : 'a t Fmt.t
+val pp_list : 'a t list Fmt.t
 
 val counter   : ?help:string -> ?labels:(string * string) list -> ?ts:Ptime.t -> string -> float -> float t
 val gauge     : ?help:string -> ?labels:(string * string) list -> ?ts:Ptime.t -> string -> float -> float t
