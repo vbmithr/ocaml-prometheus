@@ -4,10 +4,10 @@ module FMap : Map.S with type key := float
 type complex = {
   count: int;
   sum: float;
-  data: int FMap.t;
+  data: float FMap.t;
 }
 
-val complex : int -> float -> (float * int) list -> complex
+val complex : int -> float -> (float * float) list -> complex
 
 type 'a t = private {
   name: string;

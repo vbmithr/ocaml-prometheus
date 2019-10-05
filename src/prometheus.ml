@@ -15,7 +15,7 @@ end
 type complex = {
   count: int;
   sum: float;
-  data: int FMap.t;
+  data: float FMap.t;
 }
 
 let complex count sum data =
@@ -44,11 +44,11 @@ let pp_sum_count name ppf { count; sum; _ } =
 
 let pp_histogram_line name labels ppf (le, v) =
   let labels = SMap.add "le" (Fmt.str "%a" pp_float le) labels in
-  Fmt.pf ppf "%s_bucket%a %d" name pp_labels labels v
+  Fmt.pf ppf "%s_bucket%a %f" name pp_labels labels v
 
 let pp_summary_line name labels ppf (le, v) =
   let labels = SMap.add "quantile" (Fmt.str "%a" pp_float le) labels in
-  Fmt.pf ppf "%s%a %d" name pp_labels labels v
+  Fmt.pf ppf "%s%a %f" name pp_labels labels v
 
 let pp_complex_histogram name labels ppf ({ data; _ } as cplx) =
   Fmt.list ~sep:Format.pp_print_newline
