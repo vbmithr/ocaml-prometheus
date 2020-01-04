@@ -62,67 +62,76 @@ let pp_complex_summary name labels ppf ({ data; _ } as cplx) =
   Format.pp_print_newline ppf () ;
   pp_sum_count name ppf cplx
 
-type _ typ =
-  | Counter : float typ
-  | Gauge : float typ
-  | Histogram : complex typ
-  | Summary : complex typ
+type metric =
+  | Counter of float
+  | Gauge of float
+  | Histogram of complex
+  | Summary of complex
 
-let pp_typ : type a. a typ Fmt.t = fun ppf -> function
-  | Counter -> Fmt.pf ppf "counter"
-  | Gauge -> Fmt.pf ppf "gauge"
-  | Histogram -> Fmt.pf ppf "histogram"
-  | Summary -> Fmt.pf ppf "summary"
+let pp_metric ppf = function
+  | Counter _ -> Fmt.pf ppf "counter"
+  | Gauge _ -> Fmt.pf ppf "gauge"
+  | Histogram _ -> Fmt.pf ppf "histogram"
+  | Summary _ -> Fmt.pf ppf "summary"
 
-type 'a t = {
+type t = {
   name: string;
   help: string option;
   labels: string SMap.t;
   ts: Ptime.t option;
-  typ: 'a typ;
-  v: 'a;
+  metric: metric;
 }
+
+let add_labels labels t =
+  let labels = SMap.add_seq (List.to_seq labels) t.labels in
+  { t with labels }
 
 let pp_ts ppf ts =
   Fmt.pf ppf "%f" (Ptime.to_float_s ts *. 1e3)
 
-let pp_hdr : type a. a t Fmt.t =
-  fun ppf { name; help; typ; _ } ->
+let pp_hdr ppf { name; help; metric; _ } =
   Option.iter (fun msg -> Fmt.pf ppf "# HELP %s %s@." name msg) help ;
-  Fmt.pf ppf "# TYPE %s %a@." name pp_typ typ
+  Fmt.pf ppf "# TYPE %s %a@." name pp_metric metric
 
-let pp_simple ppf { name; labels; ts; v; _ } =
-  Fmt.pf ppf "%s%a %f %a" name pp_labels labels v (Fmt.option pp_ts) ts
+let pp_simple ppf { name; labels; ts; metric; _ } =
+  match metric with
+  | Counter a | Gauge a ->
+    Fmt.pf ppf "%s%a %f %a" name pp_labels labels a (Fmt.option pp_ts) ts
+  | _ -> assert false
 
-let pp_histogram ppf { name; labels; v; _ } =
-  pp_complex_histogram name labels ppf v
+let pp_histogram ppf { name; labels; metric; _ } =
+  match metric with
+  | Histogram a -> pp_complex_histogram name labels ppf a
+  | _ -> assert false
 
-let pp_summary ppf { name; labels; v; _ } =
-  pp_complex_summary name labels ppf v
+let pp_summary ppf { name; labels; metric; _ } =
+  match metric with
+  | Summary a -> pp_complex_summary name labels ppf a
+  | _ -> assert false
 
-let pp : type a. a t Fmt.t = fun ppf t ->
+let pp ppf t =
   pp_hdr ppf t ;
-  match t.typ with
-  | Counter -> pp_simple ppf t
-  | Gauge -> pp_simple ppf t
-  | Histogram -> pp_histogram ppf t
-  | Summary -> pp_summary ppf t
+  match t.metric with
+  | Counter _ -> pp_simple ppf t
+  | Gauge _ -> pp_simple ppf t
+  | Histogram _ -> pp_histogram ppf t
+  | Summary _ -> pp_summary ppf t
 
 let pp_list ts =
   Fmt.list ~sep:Format.pp_print_newline pp ts
 
 let counter ?help ?(labels=[]) ?ts name v = {
   name; help; labels = SMap.of_bindings labels;
-  ts; typ = Counter ; v }
+  ts; metric = Counter v }
 
 let gauge ?help ?(labels=[]) ?ts name v = {
   name; help; labels = SMap.of_bindings labels;
-  ts; typ = Gauge ; v }
+  ts; metric = Gauge v }
 
 let histogram ?help ?(labels=[]) ?ts name v = {
   name; help; labels = SMap.of_bindings labels;
-  ts; typ = Histogram ; v }
+  ts; metric = Histogram v }
 
 let summary ?help ?(labels=[]) ?ts name v = {
   name; help; labels = SMap.of_bindings labels;
-  ts; typ = Summary ; v }
+  ts; metric = Summary v }

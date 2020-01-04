@@ -9,20 +9,26 @@ type complex = {
 
 val complex : int -> float -> (float * float) list -> complex
 
-type 'a t = private {
+type metric =
+  | Counter of float
+  | Gauge of float
+  | Histogram of complex
+  | Summary of complex
+
+type t = private {
   name: string;
   help: string option;
   labels: string SMap.t;
   ts: Ptime.t option;
-  typ: 'a typ;
-  v: 'a;
+  metric: metric
 }
-and _ typ
 
-val pp : 'a t Fmt.t
-val pp_list : 'a t list Fmt.t
+val add_labels : (string * string) list -> t -> t
 
-val counter   : ?help:string -> ?labels:(string * string) list -> ?ts:Ptime.t -> string -> float -> float t
-val gauge     : ?help:string -> ?labels:(string * string) list -> ?ts:Ptime.t -> string -> float -> float t
-val histogram : ?help:string -> ?labels:(string * string) list -> ?ts:Ptime.t -> string -> complex -> complex t
-val summary   : ?help:string -> ?labels:(string * string) list -> ?ts:Ptime.t -> string -> complex -> complex t
+val pp : t Fmt.t
+val pp_list : t list Fmt.t
+
+val counter   : ?help:string -> ?labels:(string * string) list -> ?ts:Ptime.t -> string -> float -> t
+val gauge     : ?help:string -> ?labels:(string * string) list -> ?ts:Ptime.t -> string -> float -> t
+val histogram : ?help:string -> ?labels:(string * string) list -> ?ts:Ptime.t -> string -> complex -> t
+val summary   : ?help:string -> ?labels:(string * string) list -> ?ts:Ptime.t -> string -> complex -> t
