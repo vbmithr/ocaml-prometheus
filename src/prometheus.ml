@@ -1,3 +1,4 @@
+module FSet = Set.Make(Float)
 module SMap = struct
   include Map.Make(String)
 
@@ -14,19 +15,22 @@ end
 
 module KLL = Kll.Make(Float)
 
-type complex = {
+type 'a complex = {
   count: int;
   sum: float;
-  data: float FMap.t;
+  data: 'a;
 }
+
+type histogram = int FMap.t complex
+type summary = (KLL.t * FSet.t) complex
 
 let cumulate data =
   let open FMap in
   let cum, a =
     fold begin fun k v (cum,a) ->
-      let v = cum +. v in
+      let v = cum + v in
       v, add k v a
-    end data (0.,empty) in
+    end data (0,empty) in
   add Float.infinity cum a
 
 let complex_cum_fmap count sum data =
@@ -59,7 +63,7 @@ let pp_sum_count name ppf { count; sum; _ } =
 
 let pp_histogram_line name labels ppf (le, v) =
   let labels = SMap.add "le" (Fmt.str "%a" pp_float le) labels in
-  Fmt.pf ppf "%s_bucket%a %f" name pp_labels labels v
+  Fmt.pf ppf "%s_bucket%a %d" name pp_labels labels v
 
 let pp_summary_line name labels ppf (le, v) =
   let labels = SMap.add "quantile" (Fmt.str "%a" pp_float le) labels in
@@ -80,8 +84,8 @@ let pp_complex_summary name labels ppf ({ data; _ } as cplx) =
 type metric =
   | Counter of float
   | Gauge of float
-  | Histogram of complex
-  | Summary of complex
+  | Histogram of histogram
+  | Summary of summary
 
 let pp_metric ppf = function
   | Counter _ -> Fmt.pf ppf "counter"
@@ -100,6 +104,22 @@ type t = {
 let add_labels labels t =
   let labels = SMap.add_seq (List.to_seq labels) t.labels in
   { t with labels }
+
+let counter ?help ?(labels=[]) ?ts name v = {
+  name; help; labels = SMap.of_bindings labels;
+  ts; metric = Counter v }
+
+let gauge ?help ?(labels=[]) ?ts name v = {
+  name; help; labels = SMap.of_bindings labels;
+  ts; metric = Gauge v }
+
+let histogram ?help ?(labels=[]) ?ts name v = {
+  name; help; labels = SMap.of_bindings labels;
+  ts; metric = Histogram v }
+
+let summary ?help ?(labels=[]) ?ts name v = {
+  name; help; labels = SMap.of_bindings labels;
+  ts; metric = Summary v }
 
 let pp_ts ppf ts =
   Fmt.pf ppf "%f" (Ptime.to_float_s ts *. 1e3)
@@ -120,8 +140,17 @@ let pp_histogram ppf { name; labels; metric; _ } =
   | _ -> assert false
 
 let pp_summary ppf { name; labels; metric; _ } =
+  let aux { sum; count; data = (kll, pct)} =
+    let cdf = KLL.cdf kll in
+    let find_pct n = List.find_opt (fun (_,p) -> p -. n > 0.) cdf in
+    let quantiles =
+      FSet.fold (fun l a -> (l, find_pct l) :: a) pct [] in
+    let quantiles =
+      List.filter_map
+        (fun (p, v) -> Option.map (fun (e,_) -> p, e) v) quantiles in
+    complex_cum count sum quantiles in
   match metric with
-  | Summary a -> pp_complex_summary name labels ppf a
+  | Summary t -> pp_complex_summary name labels ppf (aux t)
   | _ -> assert false
 
 let pp ppf t =
@@ -134,19 +163,3 @@ let pp ppf t =
 
 let pp_list ts =
   Fmt.list ~sep:Format.pp_print_newline pp ts
-
-let counter ?help ?(labels=[]) ?ts name v = {
-  name; help; labels = SMap.of_bindings labels;
-  ts; metric = Counter v }
-
-let gauge ?help ?(labels=[]) ?ts name v = {
-  name; help; labels = SMap.of_bindings labels;
-  ts; metric = Gauge v }
-
-let histogram ?help ?(labels=[]) ?ts name v = {
-  name; help; labels = SMap.of_bindings labels;
-  ts; metric = Histogram v }
-
-let summary ?help ?(labels=[]) ?ts name v = {
-  name; help; labels = SMap.of_bindings labels;
-  ts; metric = Summary v }
