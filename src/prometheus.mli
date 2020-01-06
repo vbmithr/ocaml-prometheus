@@ -1,5 +1,6 @@
 module SMap : Map.S with type key := string
 module FMap : Map.S with type key := float
+module KLL : Kll.S with type elt := float
 
 type complex = {
   count: int;
@@ -7,7 +8,23 @@ type complex = {
   data: float FMap.t;
 }
 
+val cumulate : float FMap.t -> float FMap.t
+(** [cumulate hist] is the cumulative histogram of [hist], suitable to
+    ingestion by Prometheus. *)
+
+val complex_cum_fmap : int -> float -> float FMap.t -> complex
+(** [complex_cum count sum data] is a [complex] value constructed from
+    [count], [sum] and [data] where [data] is a cumulated histogram or CDF. *)
+
+val complex_cum : int -> float -> (float * float) list -> complex
+(** [complex_cum count sum data] is a [complex] value constructed from
+    [count], [sum] and [data] where [data] is a cumulated histogram or
+    CDF. *)
+
 val complex : int -> float -> (float * float) list -> complex
+(** [complex count sum data] is a [complex] value constructed from
+    [count], [sum] and [data] where [data] is a non-cumulated
+    histogram. *)
 
 type metric =
   | Counter of float

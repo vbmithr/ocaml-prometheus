@@ -12,14 +12,29 @@ module FMap = struct
     List.fold_left (fun a (k, v) -> add k v a) empty bds
 end
 
+module KLL = Kll.Make(Float)
+
 type complex = {
   count: int;
   sum: float;
   data: float FMap.t;
 }
 
-let complex count sum data =
+let cumulate data =
+  let open FMap in
+  let cum, a =
+    fold begin fun k v (cum,a) ->
+      let v = cum +. v in
+      v, add k v a
+    end data (0.,empty) in
+  add Float.infinity cum a
+
+let complex_cum_fmap count sum data =
+  { count; sum; data }
+let complex_cum count sum data =
   { count; sum; data = FMap.of_bindings data }
+let complex count sum data =
+  { count; sum; data = cumulate (FMap.of_bindings data) }
 
 let pp_float ppf f =
   match Float.classify_float f with
