@@ -17,24 +17,25 @@ module MakeCompactor(T: Set.OrderedType) = struct
   let length { elts; _ } = Vector.length elts
   let iter f { elts; _ } = Vector.iter f elts
   let push t v = Vector.push t.elts v
-  let extend t t' = Vector.append t.elts t'.elts
+  let extend t elts = Vector.append t.elts elts
 
   let compact t =
     let odd = if t.alternate then
         t.numCompactions mod 2 = 1
       else Random.bool () in
 
-    let elts = Vector.sort T.compare t.elts in
+    Vector.sort' T.compare t.elts ;
     let lastItem =
-      if Vector.length elts mod 2 = 1 then
+      if Vector.length t.elts mod 2 = 1 then
         Vector.pop t.elts else None in
     let newElts = Vector.create () in
     Vector.iteri begin fun i v ->
       if Bool.equal odd (i mod 2 = 1) then Vector.push newElts v
     end t.elts ;
-    Option.iter (Vector.push newElts) lastItem ;
+    Vector.clear t.elts ;
+    Option.iter (Vector.push t.elts) lastItem ;
     t.numCompactions <- succ t.numCompactions ;
-    t.elts <- newElts
+    newElts
 end
 
 module type S = sig
@@ -46,6 +47,7 @@ module type S = sig
 
   val update : t -> elt -> unit
   val cdf : t -> (elt * float) list
+  val pp_cdf : elt Fmt.t -> Format.formatter -> t -> unit
 end
 
 module Make(T: Set.OrderedType) : S with type elt := T.t = struct
@@ -89,8 +91,8 @@ module Make(T: Set.OrderedType) : S with type elt := T.t = struct
     Vector.iteri begin fun i c ->
       if Compactor.length c >= capacity t i then begin
         if succ i >= Vector.length t.compactors then grow t ;
-        Compactor.compact t.compactors.(i) ;
-        Compactor.extend t.compactors.(succ i) t.compactors.(i) ;
+        let newElts = Compactor.compact t.compactors.(i) in
+        Compactor.extend t.compactors.(succ i) newElts ;
         update_size t ;
         if t.lazy_mode then raise Exit
       end
@@ -101,8 +103,10 @@ module Make(T: Set.OrderedType) : S with type elt := T.t = struct
   let update t v =
     Compactor.push t.compactors.(0) v ;
     t.size <- succ t.size ;
-    if t.size >= t.maxSize then compress t ;
-    assert (t.size < t.maxSize)
+    if t.size >= t.maxSize then begin
+      compress t ;
+      assert (t.size < t.maxSize)
+    end
 
   let cdf t =
     let itemsAndWeights = Vector.create () in
@@ -114,5 +118,10 @@ module Make(T: Set.OrderedType) : S with type elt := T.t = struct
     Vector.fold begin fun (cw,a) (e, w) ->
         let cw = cw+w in
         cw, (e, float cw /. float totWeight) :: a
-      end (0,[]) itemsAndWeights |> snd |> List.rev
+    end (0,[]) itemsAndWeights |> snd |> List.rev
+
+  let pp_cdf pp ppf t =
+    let a = cdf t in
+    let pp_line ppf (v, p) = Fmt.pf ppf "%a %f" pp v p in
+    Fmt.pf ppf "%a@." (Fmt.list ~sep:Format.pp_print_newline pp_line) a
 end

@@ -7,6 +7,7 @@ module type S = sig
 
   val update : t -> elt -> unit
   val cdf : t -> (elt * float) list
+  val pp_cdf : elt Fmt.t -> Format.formatter -> t -> unit
 end
 
 module Make(T:Set.OrderedType) : S with type elt := T.t
