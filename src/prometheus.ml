@@ -28,23 +28,45 @@ let complex_cum count sum data =
 let complex count sum data =
   { count; sum; data = cumulate (FMap.of_seq (List.to_seq data)) }
 
-type t = {
-  name: string;
-  help: string option;
-  metric: metricType ;
-}
+module Descr = struct
+  module T = struct
+    type t = {
+      name: string ;
+      help: string option ;
+    }
+    let compare { name; _ } { name = name'; _ } = String.compare name name'
+    let equal { name; _ } { name = name'; _ } = String.equal name name'
+    let hash { name; _ } = Hashtbl.hash name
+  end
+  include T
+  module Map = Map.Make(T)
+  module Table = Hashtbl.Make(T)
 
-and metricType =
-  | Counter of float metric list
-  | Gauge of float metric list
-  | Histogram of histogram metric list
-  | Summary of summary metric list
+  let create ?help name = { help; name }
+end
 
-and 'a metric = {
-  labels : string SMap.t ;
-  ts: Ptime.t option ;
-  v: 'a ;
-}
+module LabelsMap = Map.Make(struct
+    type t = string SMap.t
+    let compare = SMap.compare String.compare
+  end)
+
+type 'a metric = 'a series LabelsMap.t
+and 'a series = { ts: Ptime.t option ; v: 'a }
+
+type _ typ =
+  | Counter : float typ
+  | Gauge : float typ
+  | Histogram : histogram typ
+  | Summary : summary typ
+
+type m = Metric : 'a typ * 'a metric -> m
+type t = Descr.t * m
+
+let add_labels labels (descr, (Metric (typ, m))) =
+  let m = LabelsMap.fold begin fun k v a ->
+      LabelsMap.add (SMap.add_seq (List.to_seq labels) k) v a
+    end m LabelsMap.empty in
+  (descr, Metric (typ, m))
 
 let pp_ts ppf ts =
   Fmt.pf ppf "%f" (Ptime.to_float_s ts *. 1e3)
@@ -78,54 +100,41 @@ let pp_summary_line name labels ts ppf (le, v) =
   let labels = SMap.add "quantile" (Fmt.str "%a" pp_float le) labels in
   Fmt.pf ppf "%s%a %f %a" name pp_labels labels v (Fmt.option pp_ts) ts
 
-let pp_complex_histogram name ppf { labels; ts; v = { data; _ } as cplx } =
+let pp_complex_histogram name labels ppf { ts; v = { data; _ } as cplx } =
   Fmt.list ~sep:Format.pp_print_newline
     (pp_histogram_line name labels ts) ppf (FMap.bindings data) ;
   Format.pp_print_newline ppf () ;
   pp_sum_count name labels ppf cplx
 
-let pp_complex_summary name ppf { labels; ts; v = { data; _ } as cplx } =
+let pp_complex_summary name labels ppf { ts; v = { data; _ } as cplx } =
   Fmt.list ~sep:Format.pp_print_newline
     (pp_summary_line name labels ts) ppf (FMap.bindings data) ;
   Format.pp_print_newline ppf () ;
   pp_sum_count name labels ppf cplx
 
-let pp_typ ppf = function
-  | Counter _   -> Fmt.pf ppf "counter"
-  | Gauge _     -> Fmt.pf ppf "gauge"
-  | Histogram _ -> Fmt.pf ppf "histogram"
-  | Summary _   -> Fmt.pf ppf "summary"
+let pp_typ :
+  type a. Format.formatter -> a typ -> unit = fun ppf -> function
+  | Counter   -> Fmt.pf ppf "counter"
+  | Gauge     -> Fmt.pf ppf "gauge"
+  | Histogram -> Fmt.pf ppf "histogram"
+  | Summary   -> Fmt.pf ppf "summary"
 
-let metric ?(labels=[]) ?ts v =
-  { labels = SMap.of_seq (List.to_seq labels); ts; v }
+let counter ?help name metrics   = Descr.create ?help name, Metric (Counter, metrics)
+let gauge ?help name metrics     = Descr.create ?help name, Metric (Gauge, metrics)
+let histogram ?help name metrics = Descr.create ?help name, Metric (Histogram, metrics)
+let summary ?help name metrics   = Descr.create ?help name, Metric (Summary, metrics)
 
-let add_labels labels t =
-  let labels = SMap.add_seq (List.to_seq labels) t.labels in
-  { t with labels }
-
-let add_labels labels t =
-  match t.metric with
-  | Counter a -> { t with metric = Counter (List.map (add_labels labels) a) }
-  | Gauge a -> { t with metric = Gauge (List.map (add_labels labels) a) }
-  | Histogram a -> { t with metric = Histogram (List.map (add_labels labels) a) }
-  | Summary a -> { t with metric = Summary (List.map (add_labels labels) a) }
-
-let counter ?help name metrics   = { help; name; metric = (Counter metrics)   }
-let gauge ?help name metrics     = { help; name; metric = (Gauge metrics)     }
-let histogram ?help name metrics = { help; name; metric = (Histogram metrics) }
-let summary ?help name metrics   = { help; name; metric = (Summary metrics)   }
-
-let pp_hdr ppf { name; help; metric; _ } =
+let pp_hdr ppf { Descr.name; help } metric =
   Option.iter (fun msg -> Fmt.pf ppf "# HELP %s %s@." name msg) help ;
   Fmt.pf ppf "# TYPE %s %a@." name pp_typ metric
 
-let pp_metric name ppf { labels; ts; v } =
+let pp_metric name ppf (labels, { ts; v }) =
   Fmt.pf ppf "%s%a %f %a" name pp_labels labels v (Fmt.option pp_ts) ts
 
-let pp_histogram name ppf hist =
-  pp_complex_histogram name ppf hist
+let pp_histogram name ppf (labels, hist) =
+  pp_complex_histogram name labels ppf hist
 
-let pp_summary name ppf t =
+let pp_summary name ppf (labels, t) =
   let aux { sum; count; data = (kll, pct)} =
     let cdf = KLL.cdf kll in
     let find_pct n = List.find_opt (fun (_,p) -> p -. n > 0.) cdf in
@@ -135,15 +144,15 @@ let pp_summary name ppf t =
       List.filter_map
         (fun (p, v) -> Option.map (fun (e,_) -> p, e) v) quantiles in
     complex_cum count sum quantiles in
-  pp_complex_summary name ppf { t with v = (aux t.v) }
+  pp_complex_summary name labels ppf { t with v = (aux t.v) }
 
-let pp ppf t =
-  pp_hdr ppf t ;
-  match t.metric with
-  | Counter a -> Fmt.list ~sep:Format.pp_print_newline (pp_metric t.name) ppf a
-  | Gauge a -> Fmt.list ~sep:Format.pp_print_newline (pp_metric t.name) ppf a
-  | Histogram a -> Fmt.list ~sep:Format.pp_print_newline (pp_histogram t.name) ppf a
-  | Summary a -> Fmt.list ~sep:Format.pp_print_newline (pp_summary t.name) ppf a
+let pp ppf (descr, Metric (typ, data)) =
+  pp_hdr ppf descr typ ;
+  match typ with
+  | Counter -> Fmt.list ~sep:Format.pp_print_newline (pp_metric descr.name) ppf (LabelsMap.bindings data)
+  | Gauge -> Fmt.list ~sep:Format.pp_print_newline (pp_metric descr.name) ppf (LabelsMap.bindings data)
+  | Histogram -> Fmt.list ~sep:Format.pp_print_newline (pp_histogram descr.name) ppf (LabelsMap.bindings data)
+  | Summary -> Fmt.list ~sep:Format.pp_print_newline (pp_summary descr.name) ppf (LabelsMap.bindings data)
 
 let pp_list ts =
   Fmt.list ~sep:Format.pp_print_newline pp ts

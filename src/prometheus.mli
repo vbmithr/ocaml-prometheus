@@ -30,31 +30,21 @@ val complex : int -> float -> (float * int) list -> histogram
     [count], [sum] and [data] where [data] is a non-cumulated
     histogram. *)
 
-type t = {
-  name: string;
-  help: string option;
-  metric: metricType ;
-}
+module LabelsMap : Map.S with type key := string SMap.t
+(** Map of labels: One prometheus timeseries is identified by name AND
+    label set. *)
 
-and metricType =
-  | Counter of float metric list
-  | Gauge of float metric list
-  | Histogram of histogram metric list
-  | Summary of summary metric list
+type 'a metric = 'a series LabelsMap.t
+and 'a series = { ts: Ptime.t option ; v: 'a }
 
-and 'a metric = {
-  labels : string SMap.t ;
-  ts: Ptime.t option ;
-  v: 'a ;
-}
+type t
 
 val add_labels : (string * string) list -> t -> t
 
 val pp : t Fmt.t
 val pp_list : t list Fmt.t
 
-val metric    : ?labels:(string * string) list -> ?ts:Ptime.t -> 'a -> 'a metric
-val counter   : ?help:string -> string -> float metric list -> t
-val gauge     : ?help:string -> string -> float metric list -> t
-val histogram : ?help:string -> string -> histogram metric list -> t
-val summary   : ?help:string -> string -> summary metric list -> t
+val counter   : ?help:string -> string -> float series LabelsMap.t -> t
+val gauge     : ?help:string -> string -> float series LabelsMap.t -> t
+val histogram : ?help:string -> string -> histogram series LabelsMap.t -> t
+val summary   : ?help:string -> string -> summary series LabelsMap.t -> t
