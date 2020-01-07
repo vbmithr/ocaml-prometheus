@@ -30,18 +30,22 @@ val complex : int -> float -> (float * int) list -> histogram
     [count], [sum] and [data] where [data] is a non-cumulated
     histogram. *)
 
-type metric =
-  | Counter of float
-  | Gauge of float
-  | Histogram of histogram
-  | Summary of summary
-
-type t = private {
+type t = {
   name: string;
   help: string option;
-  labels: string SMap.t;
-  ts: Ptime.t option;
-  metric: metric
+  metric: metricType ;
+}
+
+and metricType =
+  | Counter of float metric list
+  | Gauge of float metric list
+  | Histogram of histogram metric list
+  | Summary of summary metric list
+
+and 'a metric = {
+  labels : string SMap.t ;
+  ts: Ptime.t option ;
+  v: 'a ;
 }
 
 val add_labels : (string * string) list -> t -> t
@@ -49,7 +53,8 @@ val add_labels : (string * string) list -> t -> t
 val pp : t Fmt.t
 val pp_list : t list Fmt.t
 
-val counter   : ?help:string -> ?labels:(string * string) list -> ?ts:Ptime.t -> string -> float -> t
-val gauge     : ?help:string -> ?labels:(string * string) list -> ?ts:Ptime.t -> string -> float -> t
-val histogram : ?help:string -> ?labels:(string * string) list -> ?ts:Ptime.t -> string -> histogram -> t
-val summary   : ?help:string -> ?labels:(string * string) list -> ?ts:Ptime.t -> string -> summary -> t
+val metric    : ?labels:(string * string) list -> ?ts:Ptime.t -> 'a -> 'a metric
+val counter   : ?help:string -> string -> float metric list -> t
+val gauge     : ?help:string -> string -> float metric list -> t
+val histogram : ?help:string -> string -> histogram metric list -> t
+val summary   : ?help:string -> string -> summary metric list -> t
