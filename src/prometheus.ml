@@ -53,20 +53,49 @@ module LabelsMap = Map.Make(struct
 type 'a metric = 'a series LabelsMap.t
 and 'a series = { ts: Ptime.t option ; v: 'a }
 
+let create_series ?ts v = { ts; v }
+
 type _ typ =
   | Counter : float typ
   | Gauge : float typ
   | Histogram : histogram typ
   | Summary : summary typ
 
-type m = Metric : 'a typ * 'a metric -> m
-type t = Descr.t * m
+type (_,_) eq = Eq : ('a,'a) eq
+let eq_typ : type a b. a typ -> b typ -> (a, b) eq option = fun a b ->
+  match a, b with
+  | Counter, Counter -> Some Eq
+  | Gauge, Gauge -> Some Eq
+  | Histogram, Histogram -> Some Eq
+  | Summary, Summary -> Some Eq
+  | _ -> None
 
-let add_labels labels (descr, (Metric (typ, m))) =
+type m = Metric : 'a typ * 'a metric -> m
+type t = {
+  descr: Descr.t ;
+  series: m ;
+}
+
+let create ?help name typ m =
+  let m = List.fold_left begin fun a (labels, v) ->
+      LabelsMap.add (SMap.of_seq (List.to_seq labels)) v a
+    end LabelsMap.empty m in
+  { descr = Descr.create ?help name ; series = Metric (typ, m) }
+
+let add_labels labels ({ series = (Metric (typ, m)); _ } as t) =
   let m = LabelsMap.fold begin fun k v a ->
       LabelsMap.add (SMap.add_seq (List.to_seq labels) k) v a
     end m LabelsMap.empty in
-  (descr, Metric (typ, m))
+  { t with series = Metric (typ, m) }
+
+let merge
+    { descr ; series = Metric (t, m); _ }
+    { descr = descr' ; series = Metric (t', m'); _ } =
+  match eq_typ t t', descr = descr' with
+  | None, _ -> invalid_arg "merge"
+  | _, false -> invalid_arg "merge"
+  | Some Eq, true ->
+    { descr ; series = Metric (t, LabelsMap.union (fun _ a _ -> Some a) m m') }
 
 let pp_ts ppf ts =
   Fmt.pf ppf "%f" (Ptime.to_float_s ts *. 1e3)
@@ -80,24 +109,24 @@ let pp_float ppf f =
 
 let pp_label ppf (k, v) = Fmt.pf ppf "%s=\"%s\"" k v
 
-let pp_labels ppf labels =
-  if not (SMap.is_empty labels) then begin
+let pp_labels ppf = function
+  | [] -> ()
+  | labels ->
     Fmt.pf ppf "{" ;
     Fmt.list ~sep:(fun ppf () -> Fmt.string ppf ",")
-      pp_label ppf (SMap.bindings labels) ;
+      pp_label ppf labels ;
     Fmt.pf ppf "}"
-  end
 
 let pp_sum_count name labels ppf { count; sum; _ } =
   Fmt.pf ppf "%s_sum%a %a@." name pp_labels labels pp_float sum ;
   Fmt.pf ppf "%s_count%a %d" name pp_labels labels count
 
 let pp_histogram_line name labels ts ppf (le, v) =
-  let labels = SMap.add "le" (Fmt.str "%a" pp_float le) labels in
+  let labels = List.rev (("le", (Fmt.str "%a" pp_float le)) :: List.rev labels) in
   Fmt.pf ppf "%s_bucket%a %d %a" name pp_labels labels v (Fmt.option pp_ts) ts
 
 let pp_summary_line name labels ts ppf (le, v) =
-  let labels = SMap.add "quantile" (Fmt.str "%a" pp_float le) labels in
+  let labels = List.rev (("quantile", (Fmt.str "%a" pp_float le)) :: List.rev labels) in
   Fmt.pf ppf "%s%a %f %a" name pp_labels labels v (Fmt.option pp_ts) ts
 
 let pp_complex_histogram name labels ppf { ts; v = { data; _ } as cplx } =
@@ -119,20 +148,20 @@ let pp_typ :
   | Histogram -> Fmt.pf ppf "histogram"
   | Summary   -> Fmt.pf ppf "summary"
 
-let counter ?help name metrics   = Descr.create ?help name, Metric (Counter, metrics)
-let gauge ?help name metrics     = Descr.create ?help name, Metric (Gauge, metrics)
-let histogram ?help name metrics = Descr.create ?help name, Metric (Histogram, metrics)
-let summary ?help name metrics   = Descr.create ?help name, Metric (Summary, metrics)
+let counter ?help name metrics   = create ?help name Counter metrics
+let gauge ?help name metrics     = create ?help name Gauge metrics
+let histogram ?help name metrics = create ?help name Histogram metrics
+let summary ?help name metrics   = create ?help name Summary metrics
 
 let pp_hdr ppf { Descr.name; help } metric =
   Option.iter (fun msg -> Fmt.pf ppf "# HELP %s %s@." name msg) help ;
   Fmt.pf ppf "# TYPE %s %a@." name pp_typ metric
 
 let pp_metric name ppf (labels, { ts; v }) =
-  Fmt.pf ppf "%s%a %f %a" name pp_labels labels v (Fmt.option pp_ts) ts
+  Fmt.pf ppf "%s%a %f %a" name pp_labels (SMap.bindings labels) v (Fmt.option pp_ts) ts
 
 let pp_histogram name ppf (labels, hist) =
-  pp_complex_histogram name labels ppf hist
+  pp_complex_histogram name (SMap.bindings labels) ppf hist
 
 let pp_summary name ppf (labels, t) =
   let aux { sum; count; data = (kll, pct)} =
@@ -144,9 +173,9 @@ let pp_summary name ppf (labels, t) =
       List.filter_map
         (fun (p, v) -> Option.map (fun (e,_) -> p, e) v) quantiles in
     complex_cum count sum quantiles in
-  pp_complex_summary name labels ppf { t with v = (aux t.v) }
+  pp_complex_summary name (SMap.bindings labels) ppf { t with v = (aux t.v) }
 
-let pp ppf (descr, Metric (typ, data)) =
+let pp ppf {descr; series = Metric (typ, data) } =
   pp_hdr ppf descr typ ;
   match typ with
   | Counter -> Fmt.list ~sep:Format.pp_print_newline (pp_metric descr.name) ppf (LabelsMap.bindings data)

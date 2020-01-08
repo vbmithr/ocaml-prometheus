@@ -31,20 +31,30 @@ val complex : int -> float -> (float * int) list -> histogram
     histogram. *)
 
 module LabelsMap : Map.S with type key := string SMap.t
-(** Map of labels: One prometheus timeseries is identified by name AND
-    label set. *)
+(** A kv map (label) uniquely identifying a time series. *)
 
 type 'a metric = 'a series LabelsMap.t
+(** Type of a metric. A metric associates a time series to a set of
+    labels. *)
+
 and 'a series = { ts: Ptime.t option ; v: 'a }
+(** Type of a time series. Contains an optional timestamp. *)
+
+val create_series : ?ts:Ptime.t -> 'a -> 'a series
 
 type t
+(** Type of a Prometheus metric. Contains a name, an optional help
+    text, a type, and labels associated to a value. *)
 
 val add_labels : (string * string) list -> t -> t
+(** [add_labels labels t] will add [labels] to all series in [t]. *)
+
+val merge : t -> t -> t
 
 val pp : t Fmt.t
 val pp_list : t list Fmt.t
 
-val counter   : ?help:string -> string -> float series LabelsMap.t -> t
-val gauge     : ?help:string -> string -> float series LabelsMap.t -> t
-val histogram : ?help:string -> string -> histogram series LabelsMap.t -> t
-val summary   : ?help:string -> string -> summary series LabelsMap.t -> t
+val counter   : ?help:string -> string -> ((string * string) list * float series) list -> t
+val gauge     : ?help:string -> string -> ((string * string) list * float series) list -> t
+val histogram : ?help:string -> string -> ((string * string) list * histogram series) list -> t
+val summary   : ?help:string -> string -> ((string * string) list * summary series) list -> t
