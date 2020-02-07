@@ -1,4 +1,4 @@
 (test
  (name       test)
  (modules    test)
- (libraries prometheus alcotest))
+ (libraries prom alcotest))

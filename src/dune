@@ -1,4 +1,4 @@
 (library
- (name            prometheus)
- (public_name     prometheus)
+ (name            prom)
+ (public_name     prom)
  (libraries       fmt ptime containers))

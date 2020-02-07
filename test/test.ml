@@ -1,4 +1,4 @@
-open Prometheus
+open Prom
 
 let rec randseq n vmax () =
   let open Seq in
