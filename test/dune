@@ -1,5 +1,4 @@
 (test
  (name       test)
  (modules    test)
- (preprocess (pps ppx_jane))
  (libraries prometheus alcotest))

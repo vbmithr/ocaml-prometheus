@@ -14,6 +14,6 @@ depends: [
   "containers" {>= "2.8"}
   "alcotest" {with-test & >= "0.8.5"}
 ]
-synopsis: "Types and pretty printer for Prometheus' text-based exposition format"
-description: """
-"""
+synopsis: "Types and pretty printer for Prometheus text-based exposition format"
+description: """Prometheus is an open-source systems
+monitoring and alerting toolkit originally built at SoundCloud."""
