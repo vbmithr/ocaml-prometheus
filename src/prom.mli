@@ -1,3 +1,5 @@
+open Containers
+
 module SMap : Map.S with type key := string
 
 module FSet : Set.S with type elt := float

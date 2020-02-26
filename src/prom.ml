@@ -1,3 +1,4 @@
+open Containers
 module FSet = Set.Make (Float)
 module SMap = Map.Make (String)
 module FMap = Map.Make (Float)
@@ -18,15 +19,15 @@ let cumulate data =
         (v, add k v a))
       data (0, empty)
   in
-  add Float.infinity cum a
+  add infinity cum a
 
 let complex_cum_fmap count sum data = { count; sum; data }
 
 let complex_cum count sum data =
-  { count; sum; data = FMap.of_seq (List.to_seq data) }
+  { count; sum; data = FMap.of_std_seq (List.to_std_seq data) }
 
 let complex count sum data =
-  { count; sum; data = cumulate (FMap.of_seq (List.to_seq data)) }
+  { count; sum; data = cumulate (FMap.of_std_seq (List.to_std_seq data)) }
 
 module Descr = struct
   module T = struct
@@ -83,7 +84,7 @@ let create ?help name typ m =
   let m =
     List.fold_left
       (fun a (labels, v) ->
-        LabelsMap.add (SMap.of_seq (List.to_seq labels)) v a)
+        LabelsMap.add (SMap.of_std_seq (List.to_std_seq labels)) v a)
       LabelsMap.empty m
   in
   { descr = Descr.create ?help name; series = Metric (typ, m) }
@@ -91,14 +92,15 @@ let create ?help name typ m =
 let add_labels labels ({ series = Metric (typ, m); _ } as t) =
   let m =
     LabelsMap.fold
-      (fun k v a -> LabelsMap.add (SMap.add_seq (List.to_seq labels) k) v a)
+      (fun k v a ->
+        LabelsMap.add (SMap.add_std_seq k (List.to_std_seq labels)) v a)
       m LabelsMap.empty
   in
   { t with series = Metric (typ, m) }
 
 let merge { descr; series = Metric (t, m); _ }
     { descr = descr'; series = Metric (t', m'); _ } =
-  match (eq_typ t t', descr = descr') with
+  match (eq_typ t t', Descr.equal descr descr') with
   | None, _ -> invalid_arg "merge"
   | _, false -> invalid_arg "merge"
   | Some Eq, true ->
@@ -110,9 +112,9 @@ let merge { descr; series = Metric (t, m); _ }
 let pp_ts ppf ts = Fmt.pf ppf "%f" (Ptime.to_float_s ts *. 1e3)
 
 let pp_float ppf f =
-  match Float.classify_float f with
+  match Float.classify f with
   | FP_nan -> Fmt.string ppf "Nan"
-  | FP_infinite when Float.sign_bit f -> Fmt.string ppf "-Inf"
+  | FP_infinite when Float.sign_exn f = -1 -> Fmt.string ppf "-Inf"
   | FP_infinite -> Fmt.string ppf "+Inf"
   | _ -> Fmt.float ppf f
 
@@ -185,7 +187,9 @@ let pp_histogram name ppf (labels, hist) =
 let pp_summary name ppf (labels, t) =
   let aux { sum; count; data = kll, pct } =
     let cdf = KLL.cdf kll in
-    let find_pct n = List.find_opt (fun (_, p) -> p -. n > 0.) cdf in
+    let find_pct n =
+      List.find_opt (fun (_, p) -> Float.sign_exn (p -. n) = 1) cdf
+    in
     let quantiles = FSet.fold (fun l a -> (l, find_pct l) :: a) pct [] in
     let quantiles =
       List.filter_map

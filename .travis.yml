@@ -5,6 +5,7 @@ script:
 - bash -ex .travis-opam.sh
 env:
   matrix:
+    - OCAML_VERSION="4.07" PACKAGE="prom"
     - OCAML_VERSION="4.08" PACKAGE="prom"
     - OCAML_VERSION="4.09" PACKAGE="prom"
 os:
