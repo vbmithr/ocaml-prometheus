@@ -1,4 +1,3 @@
-open Containers
 module FSet = Set.Make (Float)
 module SMap = Map.Make (String)
 module FMap = Map.Make (Float)
@@ -19,15 +18,15 @@ let cumulate data =
         (v, add k v a))
       data (0, empty)
   in
-  add infinity cum a
+  add Float.infinity cum a
 
 let complex_cum_fmap count sum data = { count; sum; data }
 
 let complex_cum count sum data =
-  { count; sum; data = FMap.of_std_seq (List.to_std_seq data) }
+  { count; sum; data = FMap.of_seq (List.to_seq data) }
 
 let complex count sum data =
-  { count; sum; data = cumulate (FMap.of_std_seq (List.to_std_seq data)) }
+  { count; sum; data = cumulate (FMap.of_seq (List.to_seq data)) }
 
 module Descr = struct
   module T = struct
@@ -80,11 +79,15 @@ type m = Metric : 'a typ * 'a metric -> m
 
 type t = { descr : Descr.t; series : m }
 
+let name { descr; _ } = descr.name
+
+let help { descr; _ } = descr.help
+
 let create ?help name typ m =
   let m =
     List.fold_left
       (fun a (labels, v) ->
-        LabelsMap.add (SMap.of_std_seq (List.to_std_seq labels)) v a)
+        LabelsMap.add (SMap.of_seq (List.to_seq labels)) v a)
       LabelsMap.empty m
   in
   { descr = Descr.create ?help name; series = Metric (typ, m) }
@@ -92,29 +95,25 @@ let create ?help name typ m =
 let add_labels labels ({ series = Metric (typ, m); _ } as t) =
   let m =
     LabelsMap.fold
-      (fun k v a ->
-        LabelsMap.add (SMap.add_std_seq k (List.to_std_seq labels)) v a)
+      (fun k v a -> LabelsMap.add (SMap.add_seq (List.to_seq labels) k) v a)
       m LabelsMap.empty
   in
   { t with series = Metric (typ, m) }
 
 let merge { descr; series = Metric (t, m); _ }
     { descr = descr'; series = Metric (t', m'); _ } =
-  match (eq_typ t t', Descr.equal descr descr') with
+  match (eq_typ t t', descr = descr') with
   | None, _ -> invalid_arg "merge"
   | _, false -> invalid_arg "merge"
   | Some Eq, true ->
-      {
-        descr;
-        series = Metric (t, LabelsMap.union (fun _ a _ -> Some a) m m');
-      }
+      { descr; series = Metric (t, LabelsMap.union (fun _ a _ -> Some a) m m') }
 
 let pp_ts ppf ts = Fmt.pf ppf "%f" (Ptime.to_float_s ts *. 1e3)
 
 let pp_float ppf f =
-  match Float.classify f with
+  match Float.classify_float f with
   | FP_nan -> Fmt.string ppf "Nan"
-  | FP_infinite when Float.sign_exn f = -1 -> Fmt.string ppf "-Inf"
+  | FP_infinite when Float.sign_bit f -> Fmt.string ppf "-Inf"
   | FP_infinite -> Fmt.string ppf "+Inf"
   | _ -> Fmt.float ppf f
 
@@ -132,9 +131,7 @@ let pp_sum_count name labels ppf { count; sum; _ } =
   Fmt.pf ppf "%s_count%a %d" name pp_labels labels count
 
 let pp_histogram_line name labels ts ppf (le, v) =
-  let labels =
-    List.rev (("le", Fmt.str "%a" pp_float le) :: List.rev labels)
-  in
+  let labels = List.rev (("le", Fmt.str "%a" pp_float le) :: List.rev labels) in
   Fmt.pf ppf "%s_bucket%a %d %a" name pp_labels labels v (Fmt.option pp_ts) ts
 
 let pp_summary_line name labels ts ppf (le, v) =
@@ -147,7 +144,6 @@ let pp_complex_histogram name labels ppf { ts; v = { data; _ } as cplx } =
   Fmt.list ~sep:Format.pp_print_newline
     (pp_histogram_line name labels ts)
     ppf (FMap.bindings data);
-
   Format.pp_print_newline ppf ();
   pp_sum_count name labels ppf cplx
 
@@ -188,7 +184,16 @@ let pp_summary name ppf (labels, t) =
   let aux { sum; count; data = kll, pct } =
     let cdf = KLL.cdf kll in
     let find_pct n =
-      List.find_opt (fun (_, p) -> Float.sign_exn (p -. n) = 1) cdf
+      match
+        Containers.Array.bsearch
+          ~cmp:(fun (_, x) (_, y) -> Float.compare x y)
+          (0., n) cdf
+      with
+      | `Empty -> None
+      | `All_lower -> None
+      | `All_bigger -> Some cdf.(0)
+      | `At i -> Some cdf.(i)
+      | `Just_after i -> Some cdf.(succ i)
     in
     let quantiles = FSet.fold (fun l a -> (l, find_pct l) :: a) pct [] in
     let quantiles =

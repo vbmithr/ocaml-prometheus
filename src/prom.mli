@@ -1,5 +1,3 @@
-open Containers
-
 module SMap : Map.S with type key := string
 
 module FSet : Set.S with type elt := float
@@ -47,6 +45,10 @@ val create_series : ?ts:Ptime.t -> 'a -> 'a series
 type t
 (** Type of a Prometheus metric. Contains a name, an optional help
     text, a type, and labels associated to a value. *)
+
+val name : t -> string
+
+val help : t -> string option
 
 val add_labels : (string * string) list -> t -> t
 (** [add_labels labels t] will add [labels] to all series in [t]. *)

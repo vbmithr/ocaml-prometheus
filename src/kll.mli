@@ -1,3 +1,5 @@
+(** Mostly cargo-culted from https://github.com/edoliberty/streaming-quantiles *)
+
 module type S = sig
   type elt
 
@@ -8,9 +10,11 @@ module type S = sig
 
   val update : t -> elt -> unit
 
-  val cdf : t -> (elt * float) list
+  val update_n : t -> elt -> int -> unit
 
-  val pp_cdf : elt Fmt.t -> Format.formatter -> t -> unit
+  val cdf : t -> (elt * float) array
+
+  val pp_cdf : elt Fmt.t -> Format.formatter -> (elt * float) array -> unit
 end
 
 module Make (T : Set.OrderedType) : S with type elt := T.t

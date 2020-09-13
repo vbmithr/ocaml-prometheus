@@ -1,3 +1,9 @@
+0.3 (2020-09-13) Nancy
+----------------------
+
+- containers > 3.0 compatibility
+- Add Prom_cfg, module to generate prometheus autoconfiguration files
+
 0.2 (2020-02-27) Paris
 ----------------------
 
